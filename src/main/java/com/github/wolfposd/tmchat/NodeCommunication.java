@@ -23,6 +23,8 @@
  */
 package com.github.wolfposd.tmchat;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -31,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.websocket.CloseReason;
 
+import com.github.jtendermint.crypto.ByteUtil;
 import com.github.jtendermint.jabci.api.ICheckTx;
 import com.github.jtendermint.jabci.api.ICommit;
 import com.github.jtendermint.jabci.api.IDeliverTx;
@@ -42,7 +45,6 @@ import com.github.jtendermint.jabci.types.Types.RequestDeliverTx;
 import com.github.jtendermint.jabci.types.Types.ResponseCheckTx;
 import com.github.jtendermint.jabci.types.Types.ResponseCommit;
 import com.github.jtendermint.jabci.types.Types.ResponseDeliverTx;
-import com.github.jtmsp.websocket.ByteUtil;
 import com.github.jtmsp.websocket.Websocket;
 import com.github.jtmsp.websocket.WebsocketStatus;
 import com.github.jtmsp.websocket.jsonrpc.JSONRPC;
@@ -52,6 +54,11 @@ import com.github.wolfposd.tmchat.frontend.FrontendListener;
 import com.github.wolfposd.tmchat.frontend.ISendMessage;
 import com.google.gson.Gson;
 import com.google.protobuf.ByteString;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.bouncycastle.util.encoders.Hex;
 
 public class NodeCommunication implements ICheckTx, IDeliverTx, ICommit, ISendMessage, WebsocketStatus {
 
@@ -66,19 +73,25 @@ public class NodeCommunication implements ICheckTx, IDeliverTx, ICommit, ISendMe
     public NodeCommunication() {
 
         wsClient = new Websocket(this);
+
+
         socket = new TSocket();
         socket.registerListener(this);
         new Thread(socket::start).start();
         System.out.println("Started TMSP Socket");
 
         // wait 10 seconds before connecting the websocket
-        ScheduledExecutorService executorService = Executors.newScheduledThreadPool(1);
+        ScheduledExecutorService executorService = Executors.newScheduledThreadPool(10);
         executorService.schedule(() -> reconnectWS(), 10, TimeUnit.SECONDS);
     }
 
     private void reconnectWS() {
         System.out.println("Trying to connect to Websocket...");
-        wsClient.reconnectWebsocket();
+        try {
+            wsClient.reconnectWebsocket();
+        }catch(Exception e){
+            System.err.println(e.getMessage());
+        }
     }
 
     public void registerFrontend(String username, FrontendListener f) {
@@ -88,11 +101,41 @@ public class NodeCommunication implements ICheckTx, IDeliverTx, ICommit, ISendMe
     @Override
     public ResponseDeliverTx receivedDeliverTx(RequestDeliverTx req) {
 
-        Message msg = gson.fromJson(new String(req.getTx().toByteArray()), Message.class);
+//        String s = new String(req.getTx().toByteArray());//new String(req.getTx().toByteArray())
 
-        System.out.println(msg);
+        //byte[] bts = req.getTx().toByteArray();
+//        for(byte b:bts){
+//
+//            System.out.println("byte "+new String("0xec"));
+//        }
 
+        //Message msg = new Message("Left","Right","hello");
+
+        //System.out.println(ByteUtil.toString00(req.getTx().toByteArray()));
+        // Message msg2 = gson.fromJson(new String(req.getTx().toByteArray()), Message.class);
+        //System.out.println("msg : "+msg2.toString());
+        System.out.println("got deliver tx, with" + TSocket.byteArrayToString(req.getTx().toByteArray()));
+
+        byte[] tx =req.getTx().toByteArray();
+
+        System.out.println("got deliver tx, with" +new String(tx));
+
+
+
+        // String test ="{\"Message\": {\"sender\" :Left, \"receiver\" :Right, \"message\" :a, \"timestamp\" :1501733610660}}";
+        // String test ="{\"sender\" :Left, \"receiver\" :Right, \"message\" :a, \"timestamp\" :1501733610660}";
+
+        // Message mtest = gson.fromJson(test,Message.class);
+        //验证 gson.fromJson 可用
+//        String sMsg =msg.toString();
+//        Message test = gson.fromJson(sMsg,Message.class);
+        // System.out.println("test sender : "+mtest.sender);
+
+
+        // System.out.println(msg.toString());
+        Message msg = gson.fromJson(new String(tx) ,Message.class);
         FrontendListener l = frontends.get(msg.receiver);
+        System.out.println("receiver "+ msg.receiver);
         if (l != null) {
             l.messageIncoming(msg);
         }
@@ -108,15 +151,44 @@ public class NodeCommunication implements ICheckTx, IDeliverTx, ICommit, ISendMe
     @Override
     public ResponseCommit requestCommit(RequestCommit requestCommit) {
         hashCount += 1;
-        return ResponseCommit.newBuilder().setCode(CodeType.OK).setData(ByteString.copyFrom(ByteUtil.toBytes(hashCount))).build();
+
+
+        ByteBuffer buf = ByteBuffer.allocate(Integer.SIZE);
+        buf.putInt(hashCount);
+        return ResponseCommit.newBuilder().setCode(CodeType.OK).setData(ByteString.copyFrom(buf)).build();
     }
 
     @Override
     public void sendMessage(Message m) {
-        JSONRPC rpc = new StringParam(Method.BROADCAST_TX_ASYNC, gson.toJson(m).getBytes());
-        wsClient.sendMessage(rpc, e -> {
-            // no interest
-        });
+        //System.out.println(Charset.defaultCharset().name());
+//        final byte[] byteData = m.toString().getBytes();
+//        System.out.println("sendMessage" +  byteData);
+//        //JSONRPC rpc = new StringParam(Method.BROADCAST_TX_ASYNC, gson.toJson(m).getBytes());
+//        //JSONRPC rpc = new NewStringParam(Method.BROADCAST_TX_COMMIT, gson.toJson(m).getBytes());
+//        JSONRPC rpc = new StringParam(Method.BROADCAST_TX_COMMIT, byteData);
+//
+//        System.out.println("GSON "+ gson.toJson(rpc));
+//        wsClient.sendMessage(rpc, e -> {
+//            // no interest
+//            System.out.println("error send message");
+//        });
+
+
+        byte[] byteData = m.toString().getBytes();
+        JSONRPC rpc = new StringParam(Method.BROADCAST_TX_COMMIT,  m.toString().getBytes());
+        System.out.println("GSON "+ gson.toJson(rpc));
+        System.out.println("Send data: "+ Hex.toHexString(byteData));
+//        wsClient.sendMessage(rpc, e -> {
+//            // no interest
+//        });
+
+        try {
+
+            sendHTTPRequest(Hex.toHexString(byteData));
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -125,6 +197,23 @@ public class NodeCommunication implements ICheckTx, IDeliverTx, ICommit, ISendMe
             System.out.println("Websocket closed... reconnecting");
             reconnectWS();
         }
+    }
+
+    /*
+    * CURL 函数
+    * 发送 HTTP GET请求
+    * */
+
+    public void sendHTTPRequest(String data)
+            throws  IOException {
+        String url = "http://localhost:46657/broadcast_tx_commit?tx=0x"+data;
+        HttpClient client = new DefaultHttpClient();
+        HttpGet request = new HttpGet(url);
+
+        HttpResponse response = client.execute(request);
+        System.out.println("Response Code: " + response.getStatusLine().getStatusCode());
+
+
     }
 
 }

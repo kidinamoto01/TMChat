@@ -46,7 +46,7 @@ public class Message {
 
     @Override
     public String toString() {
-        return "Message [sender=" + sender + ", receiver=" + receiver + ", message=" + message + ", timestamp=" + timestamp + "]";
+        return "{\"sender :\":" + sender + ", \"receiver\" :" + receiver + ", \"message\": " + message + ", \"timestamp\":" + timestamp +"}";
     }
 
 }
